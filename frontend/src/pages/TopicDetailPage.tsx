@@ -31,6 +31,9 @@ import {
 import Layout from "@/components/layout/Layout";
 import { toast } from "sonner";
 import { mockTopics, mockQuestions, Topic, Question } from "@/lib/mock-data";
+import { Sparkles } from "lucide-react";
+
+import { parseGeminiResponse } from "@/lib/utils";
 
 const TopicDetailPage = () => {
   if (!localStorage.getItem("geminiApiKey")) {
@@ -46,19 +49,29 @@ const TopicDetailPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
+  const [isGenerateDialogOpen, setIsGenerateDialogOpen] = useState(false);
+  const [numQuestions, setNumQuestions] = useState(3);
+  const [difficulty, setDifficulty] = useState("Medium");
+  const [isGenerating, setIsGenerating] = useState(false);
+
+
   useEffect(() => {
     if (!id) return;
 
-    // Get topic data
     const foundTopic = mockTopics.find((t) => t.id === id);
     if (foundTopic) {
       setTopic(foundTopic);
 
-      // Get questions for this topic
-      const topicQuestions = mockQuestions[id] || [];
-      setQuestions(topicQuestions);
+      const saved = localStorage.getItem(`questions-${id}`);
+      if (saved) {
+        setQuestions(JSON.parse(saved));
+      } else {
+        const topicQuestions = mockQuestions[id] || [];
+        setQuestions(topicQuestions);
+      }
     }
   }, [id]);
+
 
   const handleAddQuestion = async () => {
     if (!newQuestionLink.trim()) {
@@ -134,6 +147,84 @@ const TopicDetailPage = () => {
       setIsLoading(false);
     }
   };
+  const handleGenerateQuestions = async () => {
+    setIsGenerating(true);
+
+    const existingTitles = questions.map((q) => q.title).join(", ");
+
+    //const prompt = `Generate ${numQuestions} unique ${difficulty} LeetCode problems on the topic "${topic?.title}". Avoid duplicates from this list: ${existingTitles}. Use this exact format for each question: **Title:** <title> \n **Description:** <description> \n Do not number the questions.`;
+    const prompt = `
+Generate ${numQuestions} unique ${difficulty}-level coding questions for the topic "${topic?.title}" similar to LeetCode-style problems.
+
+For each question, provide:
+
+**Title:** <short, clear title>  
+**Description:** A detailed problem description, including constraints and expectations. Use multiple paragraphs if needed. Include at least one example with input/output in markdown code blocks.
+
+Avoid questions with titles already in this list: ${existingTitles}.  
+Do not number the questions. Return in plain text with two line breaks between questions.
+`;
+
+    try {
+      const res = await fetch("/api/gemini/questions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: prompt,
+          geminiKey: localStorage.getItem("geminiApiKey"),
+        }),
+      });
+
+      const data = await res.json();
+      console.log("Gemini Response:", prompt);
+      console.log("Gemini Response:", data.feedback);
+
+      if (!res.ok) {
+        toast.error(data.message || "Error generating questions");
+        return;
+      }
+
+      const parsedQuestions = parseGeminiResponse(data.feedback);
+      const newQs = parsedQuestions.map((q, i) => ({
+        id: `gen-${Date.now()}-${i}`,
+        title: q.title,
+        difficulty: difficulty as "Easy" | "Medium" | "Hard",
+        description: q.description,
+        source: "LeetCode",
+        sourceUrl: "#",
+        topicId: topic?.id || "",
+        createdAt: new Date().toISOString(),
+        userId: "gen",
+        isUnderstood: false,
+        variations: [],
+      }));
+      
+      console.log("Existing titles:", questions.map((q) => q.title));
+      console.log("Generated titles:", newQs.map((q) => q.title));
+
+
+      // filter out duplicates
+      const filtered = newQs.filter(
+        (q) => !questions.some((ex) => ex.title === q.title)
+      );
+
+      if (filtered.length === 0) {
+        toast.warning("No new questions were generated (all duplicates)");
+      } else {
+        setQuestions([...questions, ...filtered]);
+        localStorage.setItem(`questions-${topic?.id}`, JSON.stringify([...questions, ...filtered])); // localstorage
+        toast.success(`${filtered.length} questions generated`);
+      }
+
+      setIsGenerateDialogOpen(false);
+    } catch (err) {
+      toast.error("Failed to generate questions");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   if (!topic) {
     return (
@@ -176,6 +267,15 @@ const TopicDetailPage = () => {
             <Plus className="h-4 w-4 mr-1" />
             Add Question
           </Button>
+          <Button
+            variant="gen"
+            onClick={() => setIsGenerateDialogOpen(true)}
+            disabled={isGenerating}
+          >
+            <Sparkles className="h-4 w-4 mr-1" />
+            {isGenerating ? "Generating..." : "Generate Questions"}
+          </Button>
+
         </div>
 
         <div className="space-y-6">
@@ -306,6 +406,53 @@ const TopicDetailPage = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={isGenerateDialogOpen} onOpenChange={setIsGenerateDialogOpen}>
+  <DialogContent>
+    <DialogHeader>
+      <DialogTitle>Generate Questions for {topic.title}</DialogTitle>
+      <DialogDescription>
+        Select the number and difficulty of questions you want Gemini to generate.
+      </DialogDescription>
+    </DialogHeader>
+
+    <div className="space-y-4 py-2">
+      <div>
+        <Label>Number of Questions</Label>
+        <Input
+          type="number"
+          min={1}
+          max={5}
+          value={numQuestions}
+          onChange={(e) => setNumQuestions(parseInt(e.target.value))}
+        />
+      </div>
+
+      <div>
+        <Label>Difficulty</Label>
+        <select
+          className="w-full border rounded px-2 py-1 mt-1 bg-white text-black dark:bg-gray-800 dark:text-white"
+          value={difficulty}
+          onChange={(e) => setDifficulty(e.target.value)}
+        >
+          <option>Easy</option>
+          <option>Medium</option>
+          <option>Hard</option>
+        </select>
+      </div>
+    </div>
+
+    <DialogFooter>
+      <Button variant="outline" onClick={() => setIsGenerateDialogOpen(false)}>
+        Cancel
+      </Button>
+      <Button onClick={handleGenerateQuestions} disabled={isGenerating}>
+        {isGenerating ? "Generating..." : "Generate"}
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
     </Layout>
   );
 };

@@ -75,4 +75,54 @@ router.post("/gemini-feedback", async (req, res) => {
   }
 });
 
+// POST /api/generate-questions
+// Expects: { topicTitle: string, geminiKey: string }
+
+router.post("/generate-questions", async (req, res) => {
+  const { topicTitle, geminiKey } = req.body;
+
+  if (!topicTitle || !geminiKey) {
+    return res.status(400).json({ message: "Missing topic or Gemini API key." });
+  }
+
+  try {
+    const geminiUrl =
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" +
+      geminiKey;
+
+    const prompt = `Generate 5 unique coding questions on the topic "${topicTitle}".
+Each should include:
+- title
+- difficulty (Easy, Medium, Hard)
+- description (2-3 lines max)
+Return result as a JSON array of objects.`;
+
+    const geminiRes = await fetch(geminiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+      }),
+    });
+
+    const data = await geminiRes.json();
+    if (!geminiRes.ok) {
+      return res.status(500).json({ message: data.error?.message || "Failed to generate questions." });
+    }
+
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    let questions;
+    try {
+      questions = JSON.parse(text);
+    } catch {
+      return res.status(500).json({ message: "Gemini returned invalid JSON." });
+    }
+
+    res.json({ questions });
+  } catch (err) {
+    res.status(500).json({ message: "Gemini generation error." });
+  }
+});
+
+
 export default router;

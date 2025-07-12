@@ -55,28 +55,36 @@ const QuestionDetailPage = () => {
   useEffect(() => {
     if (!topicId || !questionId) return;
 
-    // Get topic data
+    // 1. Set topic from mock data
     const foundTopic = mockTopics.find((t) => t.id === topicId);
     if (foundTopic) {
       setTopic(foundTopic);
+    }
 
-      // Get question data
-      const topicQuestions = mockQuestions[topicId] || [];
-      const foundQuestion = topicQuestions.find((q) => q.id === questionId);
-      if (foundQuestion) {
-        setQuestion(foundQuestion);
+    // 2. Try to get questions from localStorage first
+    const saved = localStorage.getItem(`questions-${topicId}`);
+    const topicQuestions = saved
+      ? JSON.parse(saved)
+      : (mockQuestions[topicId] || []);
 
-        // Get existing pseudocode attempts
-        const questionAttempts = mockPseudocodeAttempts[questionId] || [];
-        setAttempts(questionAttempts);
+    // 3. Find the selected question
+    const foundQuestion = topicQuestions.find((q: Question) => q.id === questionId);
+    if (foundQuestion) {
+      setQuestion(foundQuestion);
 
-        // Set most recent attempt in editor
-        if (questionAttempts.length > 0) {
-          setPseudocode(questionAttempts[0].content);
-        }
+      // 4. Get mock pseudocode attempts (optional fallback)
+      const questionAttempts = mockPseudocodeAttempts[questionId] || [];
+      setAttempts(questionAttempts);
+
+      // 5. Set the most recent attempt into editor
+      if (questionAttempts.length > 0) {
+        setPseudocode(questionAttempts[0].content);
       }
+    } else {
+      console.warn("❗ Question not found in localStorage or mock.");
     }
   }, [topicId, questionId]);
+
 
   const handleSavePseudocode = () => {
     if (!pseudocode.trim()) {

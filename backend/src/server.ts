@@ -9,6 +9,7 @@ import summaryRoutes from './routes/summaryRoutes';
 import categoryRoutes from './routes/categoryRoutes';
 import problemCategoryRoutes from './routes/problemCategoryRoutes';
 import mongoose from 'mongoose';
+import geminiRoutes from './routes/geminiRoutes';
 
 
 // Load environment variables
@@ -16,7 +17,6 @@ dotenv.config();
 
 // Create Express app
 const app = express();
-
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -40,6 +40,7 @@ app.use('/api/problems/:problemId/solutions',solutionRoutes);
 app.use('/api/problems/:problemId/summaries',summaryRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/problems/:problemId/categories', problemCategoryRoutes);
+app.use('/api/gemini', geminiRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;
